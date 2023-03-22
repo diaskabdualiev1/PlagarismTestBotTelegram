@@ -21,21 +21,15 @@ def handle_docs(message):
         with open(file_path, 'wb') as f:
             f.write(downloaded_file)
 
-        # Check if file was saved successfully
-        if os.path.exists(file_path):
-            # Run the Perl script with the file path as argument
-            perl_script_path = '/storage/moss.pl'
-            perl_output = subprocess.check_output(['perl', perl_script_path, file_path])
+        # Run the Perl script with the file path as argument
+        perl_script_path = '/storage/moss.pl'
+        perl_output = subprocess.check_output(['perl', perl_script_path, file_path])
 
-            # Send the output of the Perl script to the user
-            bot.send_message(message.chat.id, perl_output.decode('utf-8'))
-        else:
-            bot.reply_to(message, 'Error: File not saved.')
+        # Send the output of the Perl script to the user
+        bot.send_message(message.chat.id, perl_output.decode('utf-8'))
 
     except Exception as e:
-        # Log the error
-        print(e)
-        bot.reply_to(message, 'Error: ' + str(e))
+        bot.reply_to(message, e)
 
 # Start the bot
 bot.polling()
