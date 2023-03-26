@@ -1,35 +1,55 @@
-import telebot
-import subprocess
 import os
+import subprocess
+from telegram import Update, InputFile
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
 
-# Replace YOUR_TELEGRAM_BOT_TOKEN with your own bot token from BotFather
-bot = telebot.TeleBot('5964401295:AAFknoLLBy-DOXCDmZ5dfUs9DwRuBFMH6i4')
+BOT_TOKEN = "your-bot-token"  # Replace with your bot token
+PERL_SCRIPT = "/path/to/perl-script.pl"  # Replace with the path to your Perl script
+FILES_FOLDER = "/path/to/your/folder"  # Replace with the path to the folder where you want to save the files
 
-# Replace YOUR_DIRECTORY_PATH with the directory path where you want to save the files
-directory_path = '/storage'
+def start(update: Update, context: CallbackContext):
+    update.message.reply_text("Send at least two files to process.")
 
-@bot.message_handler(content_types=['document'])
-def handle_docs(message):
+def handle_files(update: Update, context: CallbackContext):
+    file_count = len(update.message.document)
+
+    if file_count < 2:
+        update.message.reply_text("Please send at least two files.")
+        return
+
+    file_paths = []
+
+    for document in update.message.document:
+        file = context.bot.getFile(document.file_id)
+        file_name = os.path.join(FILES_FOLDER, document.file_name)
+        file.download(file_name)
+        file_paths.append(file_name)
+
+    process_files(update, file_paths)
+
+def process_files(update: Update, file_paths):
     try:
-        # Download the file
-        file_info = bot.get_file(message.document.file_id)
-        downloaded_file = bot.download_file(file_info.file_path)
+        command = ["perl", PERL_SCRIPT] + file_paths
+        result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 
-        # Save the file to the specified directory
-        file_name = message.document.file_name
-        file_path = os.path.join(directory_path, file_name)
-        with open(file_path, 'wb') as f:
-            f.write(downloaded_file)
+        if result.stderr:
+            update.message.reply_text(f"Error: {result.stderr}")
+        else:
+            update.message.reply_text(f"Output:\n{result.stdout}")
 
-        # Run the Perl script with the file path as argument
-        perl_script_path = '/storage/moss.pl'
-        perl_output = subprocess.check_output(['perl', perl_script_path, file_path])
+    finally:
+        for file_path in file_paths:
+            os.remove(file_path)
 
-        # Send the output of the Perl script to the user
-        bot.send_message(message.chat.id, perl_output.decode('utf-8'))
+def main():
+    updater = Updater(BOT_TOKEN, use_context=True)
 
-    except Exception as e:
-        bot.reply_to(message, e)
+    dp = updater.dispatcher
+    dp.add_handler(CommandHandler("start", start))
+    dp.add_handler(MessageHandler(Filters.document, handle_files))
 
-# Start the bot
-bot.polling()
+    updater.start_polling()
+    updater.idle()
+
+if __name__ == "__main__":
+    main()
