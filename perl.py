@@ -1,55 +1,92 @@
 import os
 import subprocess
-from telegram import Update, InputFile
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
+import telebot
+from telebot.types import Message, Document
+from telebot.types import ReplyKeyboardMarkup, KeyboardButton, Message
 
-BOT_TOKEN = "your-bot-token"  # Replace with your bot token
-PERL_SCRIPT = "/path/to/perl-script.pl"  # Replace with the path to your Perl script
-FILES_FOLDER = "/path/to/your/folder"  # Replace with the path to the folder where you want to save the files
 
-def start(update: Update, context: CallbackContext):
-    update.message.reply_text("Send at least two files to process.")
+keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
+button = KeyboardButton('Run script')
+keyboard.add(button)
 
-def handle_files(update: Update, context: CallbackContext):
-    file_count = len(update.message.document)
 
-    if file_count < 2:
-        update.message.reply_text("Please send at least two files.")
-        return
+BOT_TOKEN = "5964401295:AAFknoLLBy-DOXCDmZ5dfUs9DwRuBFMH6i4"  # Replace with your bot token
+PERL_SCRIPT = "moss.pl"  # Replace with the path to your Perl script
+FILES_FOLDER = "storage"  # Replace with the path to the folder where you want to save the files
 
-    file_paths = []
+bot = telebot.TeleBot(BOT_TOKEN)
 
-    for document in update.message.document:
-        file = context.bot.getFile(document.file_id)
-        file_name = os.path.join(FILES_FOLDER, document.file_name)
-        file.download(file_name)
-        file_paths.append(file_name)
-
-    process_files(update, file_paths)
-
-def process_files(update: Update, file_paths):
+@bot.message_handler(content_types=['document'])
+def handle_files(message: Message):
     try:
-        command = ["perl", PERL_SCRIPT] + file_paths
-        result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        file_paths = []
+        file = message.document
+        file_path = os.path.join(FILES_FOLDER, file.file_name)
+        file_paths.append(file_path)
+        file_info = bot.get_file(file.file_id)
+        downloaded_file = bot.download_file(file_info.file_path)
+        with open(file_path, 'wb') as f:
+            f.write(downloaded_file)
+    except Exception as e:
+        bot.reply_to(message, f"Error: {str(e)}")
 
-        if result.stderr:
-            update.message.reply_text(f"Error: {result.stderr}")
-        else:
-            update.message.reply_text(f"Output:\n{result.stdout}")
+keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
+run_button = KeyboardButton('Run script')
+delete_button = KeyboardButton('Delete files')
+show_button = KeyboardButton('Show files')
+keyboard.add(run_button, delete_button, show_button)
 
-    finally:
-        for file_path in file_paths:
-            os.remove(file_path)
+@bot.message_handler(commands=['start', 'help'])
+def send_welcome(message: Message):
+    bot.reply_to(message, "Welcome to the file processing bot!", reply_markup=keyboard)
 
-def main():
-    updater = Updater(BOT_TOKEN, use_context=True)
+@bot.message_handler(func=lambda message: message.text == 'Run script')
+def run_script(message: Message):
+    try:
+        # здесь вы можете добавить свой код для обработки файла и отправки сообщения
+        
+        files = os.listdir(FILES_FOLDER)
+        
+        # запускаем Perl скрипт и передаем ему все файлы в качестве аргументов
+        script_path = 'moss.pl'
+        script_args = [os.path.join(FILES_FOLDER, file) for file in files]
+        output = subprocess.check_output(['perl', script_path] + script_args)
+        
+        # отправляем результат работы скрипта пользователю
+        bot.send_message(message.chat.id, output.decode('utf-8'))
+    except Exception as e:
+        # отправляем сообщение об ошибке
+        bot.send_message(message.chat.id, f"Error running script: {e}")
 
-    dp = updater.dispatcher
-    dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(MessageHandler(Filters.document, handle_files))
 
-    updater.start_polling()
-    updater.idle()
+@bot.message_handler(func=lambda message: message.text == 'Delete files')
+def delete_files(message: Message):
+    try:
+        # удаляем все файлы в указанной директории
+        files = os.listdir(FILES_FOLDER)
+        for file in files:
+            os.remove(os.path.join(FILES_FOLDER, file))
+        
+        # отправляем сообщение об успешном удалении файлов
+        bot.send_message(message.chat.id, "All files have been deleted!")
+    except Exception as e:
+        # отправляем сообщение об ошибке
+        bot.send_message(message.chat.id, f"Error deleting files: {e}")
 
-if __name__ == "__main__":
-    main()
+@bot.message_handler(func=lambda message: message.text == 'Show files')
+def show_files(message: Message):
+    try:
+        # получаем список файлов в указанной директории
+        files = os.listdir(FILES_FOLDER)
+        
+        # формируем сообщение с перечислением файлов
+        files_list = "\n".join(files)
+        message_text = f"Files in {FILES_FOLDER}:\n{files_list}"
+        
+        # отправляем сообщение пользователю
+        bot.send_message(message.chat.id, message_text)
+    except Exception as e:
+        # отправляем сообщение об ошибке
+        bot.send_message(message.chat.id, f"Error showing files: {e}")
+
+bot.polling()
